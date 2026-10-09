@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="description" content="Car Tag: King of the Crown - a 3D multiplayer-style arcade tag game. Grab the crown, hold it longest, and dodge the chasers!">
+  <meta name="theme-color" content="#0b1020">
+  <title>Car Tag: King of the Crown</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="modulepreload" href="lib/three.module.min.js">
+  <link rel="modulepreload" href="js/main.js">
+</head>
+<body>
+  <canvas id="game-canvas" aria-label="Car Tag game view"></canvas>
+
+  <!-- In-game HUD -->
+  <div id="hud" class="hidden">
+    <section id="scoreboard" aria-label="Crown hold time">
+      <h2>Crown Time</h2>
+      <ul id="score-list"></ul>
+    </section>
+
+    <div id="timer" aria-live="off">1:30</div>
+
+    <div id="crown-pointer" class="hidden">
+      <div id="pointer-arrow"></div>
+      <div id="pointer-label">Chase the crown</div>
+    </div>
+
+    <ul id="killfeed"></ul>
+    <div id="toast"></div>
+    <div id="center-msg"></div>
+
+    <div id="speedo"><span id="speed-val">0</span><small>KM/H</small></div>
+
+    <div id="nitro" aria-label="Nitro boost">
+      <div class="nitro-label"><span>NITRO</span><span class="nitro-key">SHIFT</span></div>
+      <div class="nitro-bar"><div id="nitro-fill"></div></div>
+    </div>
+  </div>
+
+  <!-- Touch controls (shown on touch devices only) -->
+  <div id="touch" class="hidden">
+    <div class="touch-group touch-left">
+      <button data-action="left" aria-label="Steer left">&#9664;</button>
+      <button data-action="right" aria-label="Steer right">&#9654;</button>
+    </div>
+    <div class="touch-group touch-right">
+      <button data-action="boost" class="nitro-btn" aria-label="Nitro">NITRO</button>
+      <button data-action="drift" aria-label="Drift">DRIFT</button>
+      <button data-action="down" aria-label="Brake">BRAKE</button>
+      <button data-action="up" class="gas-btn" aria-label="Accelerate">GAS</button>
+    </div>
+  </div>
+
+  <button id="mute-btn" aria-label="Toggle sound (M)" title="Toggle sound (M)">SFX</button>
+
+  <!-- Loading -->
+  <div id="loading" class="overlay">
+    <div class="panel"><h1>Car Tag</h1><p>Loading arena&hellip;</p></div>
+  </div>
+
+  <!-- Main menu -->
+  <div id="menu" class="overlay hidden">
+    <div class="panel">
+      <div class="crown-logo" aria-hidden="true">
+        <svg viewBox="0 0 64 48" width="84" height="64"><path d="M6 40 L2 12 L18 24 L32 4 L46 24 L62 12 L58 40 Z" fill="#ffe500" stroke="#b88a00" stroke-width="3" stroke-linejoin="round"/><circle cx="2" cy="12" r="3.5" fill="#ff3df2"/><circle cx="32" cy="4" r="3.5" fill="#3df2ff"/><circle cx="62" cy="12" r="3.5" fill="#ff3df2"/></svg>
+      </div>
+      <h1>Car Tag</h1>
+      <h2 class="subtitle">King of the Crown</h2>
+      <p class="lead">Grab the crown, then hold it longer than anyone else. The holder is slower and can&rsquo;t refill nitro &mdash; so keep moving, or hunt the crown down!</p>
+      <div class="controls-grid">
+        <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>&uarr;</kbd><kbd>&larr;</kbd><kbd>&darr;</kbd><kbd>&rarr;</kbd><span>Drive</span></div>
+        <div><kbd class="wide">SHIFT</kbd><span>Nitro boost</span></div>
+        <div><kbd class="wide">SPACE</kbd><span>Drift</span></div>
+        <div><kbd>P</kbd> / <kbd>ESC</kbd><span>Pause</span></div>
+      </div>
+      <button id="start-btn" class="big-btn">Start Match</button>
+      <p class="hint">90 second match &middot; 5 bot rivals &middot; most Crown Time wins</p>
+    </div>
+  </div>
+
+  <!-- Pause -->
+  <div id="pause" class="overlay hidden">
+    <div class="panel small">
+      <h1>Paused</h1>
+      <button id="resume-btn" class="big-btn">Resume</button>
+      <button id="restart-btn" class="ghost-btn">Restart Match</button>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results" class="overlay hidden">
+    <div class="panel">
+      <h2 class="subtitle" id="results-kicker">Time&rsquo;s up!</h2>
+      <h1 id="results-title">Final Standings</h1>
+      <ol id="results-list"></ol>
+      <button id="again-btn" class="big-btn">Play Again</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
