@@ -274,6 +274,17 @@ export class Arena {
     this.sunOffset = new THREE.Vector3(40, 70, 25);
   }
 
+  /** Wider shadow frustum for split-screen (players can be far apart). */
+  setShadowSpan(span) {
+    const sc = this.sun.shadow.camera;
+    if (sc.right === span) return;
+    sc.left = -span;
+    sc.right = span;
+    sc.top = span;
+    sc.bottom = -span;
+    sc.updateProjectionMatrix();
+  }
+
   /** Keeps the (tight, crisp) shadow frustum centred on the action. */
   followWithSun(x, z) {
     // Snap to a coarse grid so shadow texels do not shimmer while moving.

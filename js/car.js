@@ -301,7 +301,10 @@ export class Car {
     this.typeKey = typeKey;
     this.spec = CAR_TYPES[typeKey];
     this.color = color;
-    this.isPlayer = isPlayer;
+    this.isPlayer = isPlayer; // driven by a human on this device
+    this.isBot = false;
+    this.slot = 0; // index in Game.cars (also the network id)
+    this.netBuf = []; // online guests: recent host snapshots for interpolation
     this.speedScale = speedScale;
 
     const built = typeKey === 'monster' ? buildMonster(color) : buildMuscle(color);

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="description" content="Car Tag: King of the Crown - a 3D multiplayer-style arcade tag game. Grab the crown, hold it longest, and dodge the chasers!">
+  <meta name="description" content="Car Tag: King of the Crown - a 3D arcade car tag game. Grab the crown, hold it longest, and dodge the chasers. Solo, split-screen for up to 4, or online for up to 6.">
   <meta name="theme-color" content="#0b1020">
   <title>Car Tag: King of the Crown</title>
   <link rel="stylesheet" href="styles.css">
@@ -13,33 +13,19 @@
 <body>
   <canvas id="game-canvas" aria-label="Car Tag game view"></canvas>
 
-  <!-- In-game HUD -->
+  <!-- In-game HUD: shared parts here, per-player parts are generated into #hud-views -->
   <div id="hud" class="hidden">
+    <div id="hud-views"></div>
     <section id="scoreboard" aria-label="Crown hold time">
       <h2>Crown Time</h2>
       <ul id="score-list"></ul>
     </section>
-
     <div id="timer" aria-live="off">1:30</div>
-
-    <div id="crown-pointer" class="hidden">
-      <div id="pointer-arrow"></div>
-      <div id="pointer-label">Chase the crown</div>
-    </div>
-
     <ul id="killfeed"></ul>
-    <div id="toast"></div>
     <div id="center-msg"></div>
-
-    <div id="speedo"><span id="speed-val">0</span><small>KM/H</small></div>
-
-    <div id="nitro" aria-label="Nitro boost">
-      <div class="nitro-label"><span>NITRO</span><span class="nitro-key">SHIFT</span></div>
-      <div class="nitro-bar"><div id="nitro-fill"></div></div>
-    </div>
   </div>
 
-  <!-- Touch controls (shown on touch devices only) -->
+  <!-- Touch controls (solo / online on touch devices) -->
   <div id="touch" class="hidden">
     <div class="touch-group touch-left">
       <button data-action="left" aria-label="Steer left">&#9664;</button>
@@ -68,15 +54,69 @@
       </div>
       <h1>Car Tag</h1>
       <h2 class="subtitle">King of the Crown</h2>
-      <p class="lead">Grab the crown, then hold it longer than anyone else. The holder is slower and can&rsquo;t refill nitro &mdash; so keep moving, or hunt the crown down!</p>
+      <p class="lead">Grab the crown, then hold it longer than anyone else. The holder is slower and can&rsquo;t refill nitro, so keep moving or hunt the crown down.</p>
+      <div class="mode-grid">
+        <button id="solo-btn" class="mode-btn primary"><strong>Solo</strong><span>You vs 5 bots</span></button>
+        <button id="local-btn" class="mode-btn"><strong>Local</strong><span>2&ndash;4 players, split screen</span></button>
+        <button id="online-btn" class="mode-btn"><strong>Online</strong><span>2&ndash;6 players, room code</span></button>
+      </div>
       <div class="controls-grid">
         <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>&uarr;</kbd><kbd>&larr;</kbd><kbd>&darr;</kbd><kbd>&rarr;</kbd><span>Drive</span></div>
         <div><kbd class="wide">SHIFT</kbd><span>Nitro boost</span></div>
         <div><kbd class="wide">SPACE</kbd><span>Drift</span></div>
         <div><kbd>P</kbd> / <kbd>ESC</kbd><span>Pause</span></div>
       </div>
-      <button id="start-btn" class="big-btn">Start Match</button>
-      <p class="hint">90 second match &middot; 5 bot rivals &middot; most Crown Time wins</p>
+      <p class="hint">90 second matches &middot; empty seats are filled by bots &middot; gamepads supported</p>
+    </div>
+  </div>
+
+  <!-- Local split-screen setup -->
+  <div id="local-setup" class="overlay hidden">
+    <div class="panel">
+      <h2 class="subtitle">Split screen</h2>
+      <h1>Local Match</h1>
+      <div class="seg" role="radiogroup" aria-label="Number of players">
+        <button class="seg-btn" data-count="2" role="radio">2 players</button>
+        <button class="seg-btn" data-count="3" role="radio">3 players</button>
+        <button class="seg-btn" data-count="4" role="radio">4 players</button>
+      </div>
+      <ol id="local-players" class="player-rows"></ol>
+      <p id="pad-status" class="hint"></p>
+      <button id="local-start" class="big-btn">Start Match</button>
+      <button id="local-back" class="ghost-btn">Back</button>
+    </div>
+  </div>
+
+  <!-- Online: create / join -->
+  <div id="online-menu" class="overlay hidden">
+    <div class="panel">
+      <h2 class="subtitle">Up to 6 players</h2>
+      <h1>Online</h1>
+      <label class="field">
+        <span>Your name</span>
+        <input id="online-name" type="text" maxlength="12" autocomplete="nickname" placeholder="Driver">
+      </label>
+      <button id="create-room" class="big-btn">Create Room</button>
+      <div class="divider"><span>or join a friend</span></div>
+      <div class="join-row">
+        <input id="join-code" type="text" maxlength="4" autocomplete="off" spellcheck="false" placeholder="CODE" aria-label="Room code">
+        <button id="join-room" class="big-btn">Join</button>
+      </div>
+      <p id="online-status" class="status" role="status"></p>
+      <button id="online-back" class="ghost-btn">Back</button>
+    </div>
+  </div>
+
+  <!-- Online lobby -->
+  <div id="lobby" class="overlay hidden">
+    <div class="panel">
+      <h2 class="subtitle">Room code</h2>
+      <div id="lobby-code" class="room-code">----</div>
+      <p class="hint">Friends join from <strong>Online &rarr; Join</strong> with this code. Empty seats are filled by bots.</p>
+      <ol id="lobby-list" class="player-rows"></ol>
+      <p id="lobby-status" class="status" role="status"></p>
+      <button id="lobby-start" class="big-btn">Start Match</button>
+      <button id="lobby-leave" class="ghost-btn">Leave Room</button>
     </div>
   </div>
 
@@ -84,8 +124,10 @@
   <div id="pause" class="overlay hidden">
     <div class="panel small">
       <h1>Paused</h1>
+      <p id="pause-note" class="hint hidden">Online matches keep running while this menu is open.</p>
       <button id="resume-btn" class="big-btn">Resume</button>
       <button id="restart-btn" class="ghost-btn">Restart Match</button>
+      <button id="quit-btn" class="ghost-btn">Quit to Menu</button>
     </div>
   </div>
 
@@ -95,10 +137,13 @@
       <h2 class="subtitle" id="results-kicker">Time&rsquo;s up!</h2>
       <h1 id="results-title">Final Standings</h1>
       <ol id="results-list"></ol>
+      <p id="results-note" class="status hidden"></p>
       <button id="again-btn" class="big-btn">Play Again</button>
+      <button id="menu-btn" class="ghost-btn">Main Menu</button>
     </div>
   </div>
 
+  <script src="lib/peerjs.min.js" defer></script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

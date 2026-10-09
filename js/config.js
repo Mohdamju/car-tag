@@ -5,7 +5,9 @@ export const CONFIG = {
   // Match flow
   MATCH_TIME: 90,
   COUNTDOWN_TIME: 3,
-  BOT_COUNT: 5, // 4-6 supported
+  TOTAL_CARS: 6, // humans + bots; bots fill every empty slot
+  MAX_LOCAL_PLAYERS: 4, // split-screen
+  MAX_ONLINE_PLAYERS: 6,
 
   // Arena
   ARENA_HALF: 80,
@@ -34,6 +36,12 @@ export const CONFIG = {
 
   // Camera
   CAMERA_FOV: 62,
+
+  // Online
+  NET_SNAPSHOT_HZ: 20, // host -> guests world state
+  NET_INPUT_HZ: 30, // guest -> host controls
+  NET_INTERP_DELAY: 0.1, // guests render other cars this far in the past (s)
+  NET_ROOM_PREFIX: 'cartag-kotc-',
 };
 
 export const TWO_PI = Math.PI * 2;

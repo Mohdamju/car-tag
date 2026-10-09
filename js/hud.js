@@ -3,7 +3,7 @@ import { CONFIG, wrapAngle } from './config.js';
 const CROWN_SVG =
   '<svg class="crown-ico" viewBox="0 0 64 48"><path d="M6 40 L2 12 L18 24 L32 4 L46 24 L62 12 L58 40 Z" fill="#ffe500" stroke="#b88a00" stroke-width="4" stroke-linejoin="round"/></svg>';
 
-function hex(color) {
+export function hex(color) {
   return `#${color.toString(16).padStart(6, '0')}`;
 }
 
@@ -17,50 +17,133 @@ function formatHold(t) {
   return `${t.toFixed(1)}s`;
 }
 
-/** Thin DOM layer: writes only when a value actually changes. */
+// ---------------------------------------------------------------------------
+// Per-player HUD: speed, nitro, crown pointer and personal toasts. One per
+// split-screen viewport, positioned over that viewport.
+// ---------------------------------------------------------------------------
+
+export class PlayerHUD {
+  constructor(container) {
+    this.el = document.createElement('div');
+    this.el.className = 'phud';
+    this.el.innerHTML = `
+      <div class="phud-tag"></div>
+      <div class="crown-pointer hidden"><div class="pointer-arrow"></div><div class="pointer-label"></div></div>
+      <div class="toast"></div>
+      <div class="speedo"><span class="speed-val">0</span><small>KM/H</small></div>
+      <div class="nitro">
+        <div class="nitro-label"><span class="nitro-name">NITRO</span><span class="nitro-key"></span></div>
+        <div class="nitro-bar"><div class="nitro-fill"></div></div>
+      </div>`;
+    container.appendChild(this.el);
+    const q = (s) => this.el.querySelector(s);
+    this.tag = q('.phud-tag');
+    this.pointer = q('.crown-pointer');
+    this.pointerArrow = q('.pointer-arrow');
+    this.pointerLabel = q('.pointer-label');
+    this.toast = q('.toast');
+    this.speedVal = q('.speed-val');
+    this.nitro = q('.nitro');
+    this.nitroFill = q('.nitro-fill');
+    this.nitroKey = q('.nitro-key');
+    this._c = { speed: -1, nitro: -1, nitroClass: '', pointerText: '', pointerHidden: true };
+  }
+
+  configure({ rect, compact, tagText, tagColor, nitroKey }) {
+    const s = this.el.style;
+    s.left = `${rect[0] * 100}%`;
+    s.top = `${rect[1] * 100}%`;
+    s.width = `${rect[2] * 100}%`;
+    s.height = `${rect[3] * 100}%`;
+    this.el.classList.toggle('compact', compact);
+    this.tag.textContent = tagText || '';
+    this.tag.style.background = tagColor || 'transparent';
+    this.tag.classList.toggle('hidden', !tagText);
+    this.nitroKey.textContent = nitroKey || '';
+  }
+
+  update(car, holder, cameraHeading) {
+    const v = Math.round(car.speed * 3.6);
+    if (v !== this._c.speed) {
+      this.speedVal.textContent = String(v);
+      this._c.speed = v;
+    }
+
+    const pct = Math.round((car.nitro / CONFIG.NITRO_MAX) * 100);
+    if (pct !== this._c.nitro) {
+      this.nitroFill.style.transform = `scaleX(${(pct / 100).toFixed(3)})`;
+      this._c.nitro = pct;
+    }
+    const cls = `nitro${car.boosting ? ' boosting' : ''}${car.nitroLocked ? ' locked' : ''}${car.hasCrown ? ' frozen' : ''}`;
+    if (cls !== this._c.nitroClass) {
+      this.nitro.className = cls;
+      this._c.nitroClass = cls;
+    }
+
+    // Rotating arrow pointing from the camera view toward the crown holder.
+    const hide = !holder || holder === car;
+    if (hide !== this._c.pointerHidden) {
+      this.pointer.classList.toggle('hidden', hide);
+      this._c.pointerHidden = hide;
+    }
+    if (hide) return;
+    const dx = holder.pos.x - car.pos.x;
+    const dz = holder.pos.z - car.pos.z;
+    const rel = wrapAngle(Math.atan2(dx, dz) - cameraHeading); // +ve = target is to the left
+    this.pointerArrow.style.transform = `rotate(${((-rel * 180) / Math.PI).toFixed(1)}deg)`;
+    const text = `${holder.name} · ${Math.round(Math.hypot(dx, dz))}m`;
+    if (text !== this._c.pointerText) {
+      this.pointerLabel.textContent = text;
+      this._c.pointerText = text;
+    }
+  }
+
+  showToast(text, color = '#ffe500') {
+    this.toast.textContent = text;
+    this.toast.style.color = color;
+    this.toast.classList.remove('show');
+    void this.toast.offsetWidth; // restart the CSS animation
+    this.toast.classList.add('show');
+  }
+
+  destroy() {
+    this.el.remove();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared HUD + screens. Writes to the DOM only when a value actually changes.
+// ---------------------------------------------------------------------------
+
 export class HUD {
   constructor() {
     const $ = (id) => document.getElementById(id);
     this.root = $('hud');
+    this.views = $('hud-views');
     this.scoreList = $('score-list');
     this.timer = $('timer');
-    this.pointer = $('crown-pointer');
-    this.pointerArrow = $('pointer-arrow');
-    this.pointerLabel = $('pointer-label');
     this.killfeed = $('killfeed');
-    this.toast = $('toast');
     this.centerMsg = $('center-msg');
-    this.speedVal = $('speed-val');
-    this.nitro = $('nitro');
-    this.nitroFill = $('nitro-fill');
 
-    this.menu = $('menu');
-    this.pause = $('pause');
     this.results = $('results');
     this.resultsList = $('results-list');
     this.resultsTitle = $('results-title');
     this.resultsKicker = $('results-kicker');
+    this.resultsNote = $('results-note');
+    this.againBtn = $('again-btn');
     this.loading = $('loading');
     this.touch = $('touch');
     this.muteBtn = $('mute-btn');
 
     this.rows = new Map();
-    this._cache = { timer: '', speed: -1, nitro: -1, center: '', pointerText: '', nitroClass: '' };
-    this._toastTimer = 0;
+    this.playerHuds = [];
+    this._cache = { timer: '', center: '' };
   }
 
   // ----- Screens ------------------------------------------------------------
 
   showLoading(show) {
     this.loading.classList.toggle('hidden', !show);
-  }
-
-  showMenu(show) {
-    this.menu.classList.toggle('hidden', !show);
-  }
-
-  showPause(show) {
-    this.pause.classList.toggle('hidden', !show);
   }
 
   showHUD(show) {
@@ -78,30 +161,35 @@ export class HUD {
     this.muteBtn.setAttribute('aria-pressed', muted ? 'true' : 'false');
   }
 
+  /** Create one PlayerHUD per split-screen view. */
+  buildPlayerHuds(views) {
+    for (const h of this.playerHuds) h.destroy();
+    this.playerHuds = views.map((view) => {
+      const h = new PlayerHUD(this.views);
+      h.configure(view.hudConfig);
+      return h;
+    });
+    document.body.classList.toggle('split', views.length > 1);
+    return this.playerHuds;
+  }
+
   // ----- Scoreboard ---------------------------------------------------------
 
-  buildScoreboard(cars) {
+  buildScoreboard(cars, localCars) {
     this.scoreList.textContent = '';
     this.rows.clear();
     for (const car of cars) {
       const li = document.createElement('li');
-      if (car.isPlayer) li.classList.add('is-player');
+      if (localCars.includes(car)) li.classList.add('is-player');
       li.innerHTML = `<span class="dot"></span><span class="name"></span><span class="time">0.0s</span>${CROWN_SVG}`;
       li.querySelector('.dot').style.background = hex(car.color);
-      li.querySelector('.name').textContent = car.isPlayer ? 'YOU' : car.name;
+      li.querySelector('.name').textContent = car.name;
       this.scoreList.appendChild(li);
-      this.rows.set(car.id, {
-        li,
-        time: li.querySelector('.time'),
-        lastText: '0.0s',
-        lastCrown: false,
-        lastOrder: -1,
-      });
+      this.rows.set(car.id, { li, time: li.querySelector('.time'), lastText: '0.0s', lastCrown: false, lastOrder: -1 });
     }
   }
 
   updateScoreboard(cars) {
-    // Rank by hold time (stable for ties: original order).
     const sorted = cars.slice().sort((a, b) => b.holdTime - a.holdTime);
     for (let i = 0; i < sorted.length; i++) {
       const car = sorted[i];
@@ -123,7 +211,7 @@ export class HUD {
     }
   }
 
-  // ----- Timer / meters -----------------------------------------------------
+  // ----- Timer / messages ---------------------------------------------------
 
   setTimer(seconds) {
     const text = formatClock(seconds);
@@ -134,46 +222,15 @@ export class HUD {
     this.timer.classList.toggle('urgent', seconds <= 10 && seconds > 0);
   }
 
-  setSpeed(kmh) {
-    const v = Math.round(kmh);
-    if (v !== this._cache.speed) {
-      this.speedVal.textContent = String(v);
-      this._cache.speed = v;
-    }
-  }
-
-  setNitro(car) {
-    const pct = Math.round((car.nitro / CONFIG.NITRO_MAX) * 100);
-    if (pct !== this._cache.nitro) {
-      this.nitroFill.style.transform = `scaleX(${(pct / 100).toFixed(3)})`;
-      this._cache.nitro = pct;
-    }
-    const cls = `${car.boosting ? 'boosting ' : ''}${car.nitroLocked ? 'locked ' : ''}${car.hasCrown ? 'frozen' : ''}`;
-    if (cls !== this._cache.nitroClass) {
-      this.nitro.className = cls;
-      this._cache.nitroClass = cls;
-    }
-  }
-
-  // ----- Messages -----------------------------------------------------------
-
   setCenter(text, animate = true) {
     if (text === this._cache.center) return;
     this._cache.center = text;
     this.centerMsg.textContent = text;
     this.centerMsg.classList.remove('pop');
     if (text && animate) {
-      void this.centerMsg.offsetWidth; // restart the CSS animation
+      void this.centerMsg.offsetWidth;
       this.centerMsg.classList.add('pop');
     }
-  }
-
-  showToast(text, color = '#ffe500') {
-    this.toast.textContent = text;
-    this.toast.style.color = color;
-    this.toast.classList.remove('show');
-    void this.toast.offsetWidth;
-    this.toast.classList.add('show');
   }
 
   pushFeed(text, color) {
@@ -182,60 +239,49 @@ export class HUD {
     li.style.borderLeft = `5px solid ${color}`;
     this.killfeed.appendChild(li);
     while (this.killfeed.children.length > 4) this.killfeed.removeChild(this.killfeed.firstChild);
-    setTimeout(() => {
-      if (li.parentNode) li.parentNode.removeChild(li);
-    }, 4500);
+    setTimeout(() => li.remove(), 4500);
   }
 
   clearFeed() {
     this.killfeed.textContent = '';
-    this.toast.classList.remove('show');
     this.setCenter('', false);
-  }
-
-  /**
-   * Rotating arrow below the timer pointing from the camera view toward the crown holder.
-   * Hidden while the player holds the crown.
-   */
-  updatePointer(player, holder, cameraHeading) {
-    if (!holder || holder === player) {
-      this.pointer.classList.add('hidden');
-      return;
-    }
-    this.pointer.classList.remove('hidden');
-    const dx = holder.pos.x - player.pos.x;
-    const dz = holder.pos.z - player.pos.z;
-    const rel = wrapAngle(Math.atan2(dx, dz) - cameraHeading); // +ve = target is to the left
-    const deg = (-rel * 180) / Math.PI;
-    this.pointerArrow.style.transform = `rotate(${deg.toFixed(1)}deg)`;
-    const text = `${holder.name} - ${Math.round(Math.hypot(dx, dz))}m`;
-    if (text !== this._cache.pointerText) {
-      this.pointerLabel.textContent = text;
-      this._cache.pointerText = text;
-    }
   }
 
   // ----- Results ------------------------------------------------------------
 
-  showResults(sorted, player) {
+  /**
+   * @param {Array} sorted cars ranked by hold time
+   * @param {Array} localCars cars driven on this device
+   * @param {{canRestart: boolean, note: string}} opts
+   */
+  showResults(sorted, localCars, opts) {
     const best = Math.max(sorted[0].holdTime, 0.001);
-    const rank = sorted.indexOf(player) + 1;
-    this.resultsKicker.textContent = rank === 1 ? 'Crown champion!' : "Time's up!";
-    this.resultsTitle.textContent = rank === 1 ? 'YOU WIN!' : `You placed #${rank}`;
+    const winner = sorted[0];
+    if (localCars.length === 1) {
+      const rank = sorted.indexOf(localCars[0]) + 1;
+      this.resultsKicker.textContent = rank === 1 ? 'Crown champion!' : "Time's up!";
+      this.resultsTitle.textContent = rank === 1 ? 'YOU WIN!' : `You placed #${rank}`;
+    } else {
+      this.resultsKicker.textContent = "Time's up!";
+      this.resultsTitle.textContent = `${winner.name} wins!`;
+    }
     this.resultsList.textContent = '';
     sorted.forEach((car, i) => {
       const li = document.createElement('li');
       if (i === 0) li.classList.add('first');
-      if (car.isPlayer) li.classList.add('you');
+      if (localCars.includes(car)) li.classList.add('you');
       li.innerHTML =
         '<span class="bar"></span><span class="rank"></span><span class="swatch"></span><span class="rname"></span><span class="rtime"></span>';
       li.querySelector('.bar').style.width = `${Math.round((car.holdTime / best) * 100)}%`;
       li.querySelector('.rank').textContent = `#${i + 1}`;
       li.querySelector('.swatch').style.background = hex(car.color);
-      li.querySelector('.rname').textContent = car.isPlayer ? 'YOU' : car.name;
+      li.querySelector('.rname').textContent = car.isBot ? `${car.name} (bot)` : car.name;
       li.querySelector('.rtime').textContent = formatHold(car.holdTime);
       this.resultsList.appendChild(li);
     });
+    this.againBtn.classList.toggle('hidden', !opts.canRestart);
+    this.resultsNote.textContent = opts.note || '';
+    this.resultsNote.classList.toggle('hidden', !opts.note);
     this.results.classList.remove('hidden');
   }
 
