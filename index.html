@@ -56,7 +56,7 @@
       <h2 class="subtitle">King of the Crown</h2>
       <p class="lead">Grab the crown, then hold it longer than anyone else. The holder is slower and can&rsquo;t refill nitro, so keep moving or hunt the crown down.</p>
       <div class="mode-grid">
-        <button id="solo-btn" class="mode-btn primary"><strong>Solo</strong><span>You vs 5 bots</span></button>
+        <button id="solo-btn" class="mode-btn primary"><strong>Solo</strong><span>You vs 1&ndash;5 bots</span></button>
         <button id="local-btn" class="mode-btn"><strong>Local</strong><span>2&ndash;4 players, split screen</span></button>
         <button id="online-btn" class="mode-btn"><strong>Online</strong><span>2&ndash;6 players, room code</span></button>
       </div>
@@ -66,7 +66,26 @@
         <div><kbd class="wide">SPACE</kbd><span>Drift</span></div>
         <div><kbd>P</kbd> / <kbd>ESC</kbd><span>Pause</span></div>
       </div>
-      <p class="hint">90 second matches &middot; empty seats are filled by bots &middot; gamepads supported</p>
+      <p class="hint">90 second matches &middot; up to 6 cars &middot; choose how many bots &middot; gamepads supported</p>
+    </div>
+  </div>
+
+  <!-- Solo setup -->
+  <div id="solo-setup" class="overlay hidden">
+    <div class="panel small">
+      <h2 class="subtitle">You vs bots</h2>
+      <h1>Solo</h1>
+      <div class="bots-row">
+        <span class="bots-label">Bots</span>
+        <div class="stepper" data-stepper="solo">
+          <button class="step-btn" data-step="-1" aria-label="Remove a bot">&minus;</button>
+          <output class="step-val" aria-live="polite">5</output>
+          <button class="step-btn" data-step="1" aria-label="Add a bot">+</button>
+        </div>
+      </div>
+      <p class="hint step-hint" data-hint="solo"></p>
+      <button id="solo-start" class="big-btn">Start Match</button>
+      <button id="solo-back" class="ghost-btn">Back</button>
     </div>
   </div>
 
@@ -82,6 +101,14 @@
       </div>
       <ol id="local-players" class="player-rows"></ol>
       <p id="pad-status" class="hint"></p>
+      <div class="bots-row">
+        <span class="bots-label">Bots</span>
+        <div class="stepper" data-stepper="local">
+          <button class="step-btn" data-step="-1" aria-label="Remove a bot">&minus;</button>
+          <output class="step-val" aria-live="polite">2</output>
+          <button class="step-btn" data-step="1" aria-label="Add a bot">+</button>
+        </div>
+      </div>
       <button id="local-start" class="big-btn">Start Match</button>
       <button id="local-back" class="ghost-btn">Back</button>
     </div>
@@ -112,7 +139,15 @@
     <div class="panel">
       <h2 class="subtitle">Room code</h2>
       <div id="lobby-code" class="room-code">----</div>
-      <p class="hint">Friends join from <strong>Online &rarr; Join</strong> with this code. Empty seats are filled by bots.</p>
+      <p class="hint">Friends join from <strong>Online &rarr; Join</strong> with this code. Up to 6 cars: players first, then bots.</p>
+      <div class="bots-row">
+        <span class="bots-label">Bots</span>
+        <div class="stepper" data-stepper="online">
+          <button class="step-btn" data-step="-1" aria-label="Remove a bot">&minus;</button>
+          <output class="step-val" aria-live="polite">4</output>
+          <button class="step-btn" data-step="1" aria-label="Add a bot">+</button>
+        </div>
+      </div>
       <ol id="lobby-list" class="player-rows"></ol>
       <p id="lobby-status" class="status" role="status"></p>
       <button id="lobby-start" class="big-btn">Start Match</button>

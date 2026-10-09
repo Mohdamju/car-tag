@@ -1,18 +1,35 @@
 import { CONFIG } from './config.js';
-import { CAR_DEFS, GameState } from './game.js';
+import { CAR_DEFS, GameState, fillSlots } from './game.js';
 import { DEVICE_LABELS } from './input.js';
 import { OnlineSession, onlineSupported } from './online.js';
 import { hex } from './hud.js';
 
 const LOCAL_DEVICES = ['kb-wasd', 'kb-arrows', 'gamepad-0', 'gamepad-1', 'gamepad-2', 'gamepad-3'];
 const DEFAULT_LOCAL_DEVICES = ['kb-wasd', 'kb-arrows', 'gamepad-0', 'gamepad-1'];
-const OVERLAYS = ['menu', 'local-setup', 'online-menu', 'lobby', 'pause', 'results'];
+const OVERLAYS = ['menu', 'solo-setup', 'local-setup', 'online-menu', 'lobby', 'pause', 'results'];
 
 function loadName() {
   try {
     return localStorage.getItem('cartag-name') || '';
   } catch (e) {
     return '';
+  }
+}
+
+function loadNumber(key, fallback) {
+  try {
+    const v = Number(localStorage.getItem(key));
+    return localStorage.getItem(key) !== null && Number.isFinite(v) ? v : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function saveNumber(key, value) {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch (e) {
+    /* storage unavailable; ignore */
   }
 }
 
@@ -35,6 +52,12 @@ export class Menus {
     this.session = null;
     this.localCount = 2;
     this.localDevices = DEFAULT_LOCAL_DEVICES.slice();
+    // Bot count per mode (remembered between visits).
+    this.botCounts = {
+      solo: loadNumber('cartag-bots-solo', 5),
+      local: loadNumber('cartag-bots-local', 4),
+      online: loadNumber('cartag-bots-online', 4),
+    };
     this.$ = (id) => document.getElementById(id);
 
     game.onMatchEnded = () => {
@@ -42,6 +65,7 @@ export class Menus {
       this._hide('pause');
     };
 
+    this._bindSteppers();
     this._bindMain();
     this._bindLocal();
     this._bindOnline();
@@ -72,10 +96,17 @@ export class Menus {
   // ----- Main menu ------------------------------------------------------------
 
   _bindMain() {
-    this.$('solo-btn').addEventListener('click', () => this.startSolo());
+    this.$('solo-btn').addEventListener('click', () => {
+      this.audio.unlock();
+      this._renderSteppers();
+      this.show('solo-setup');
+    });
+    this.$('solo-start').addEventListener('click', () => this.startSolo());
+    this.$('solo-back').addEventListener('click', () => this.show('menu'));
     this.$('local-btn').addEventListener('click', () => {
       this.audio.unlock();
       this._renderLocal();
+      this._renderSteppers();
       this.show('local-setup');
     });
     this.$('online-btn').addEventListener('click', () => {
@@ -88,9 +119,8 @@ export class Menus {
 
   startSolo() {
     this.audio.unlock();
-    const slots = [];
-    for (let i = 0; i < CONFIG.TOTAL_CARS; i++) slots.push(i === 0 ? { kind: 'local', name: 'YOU', device: 'kb-all' } : { kind: 'bot' });
-    this.game.startMatch({ mode: 'offline', slots });
+    const humans = [{ kind: 'local', name: 'YOU', device: 'kb-all' }, null, null, null, null, null];
+    this.game.startMatch({ mode: 'offline', slots: fillSlots(humans, this._bots('solo')) });
     this._beginMatch();
   }
 
@@ -103,6 +133,7 @@ export class Menus {
         btn.addEventListener('click', () => {
           this.localCount = Number(btn.dataset.count);
           this._renderLocal();
+          this._renderSteppers();
         })
       );
     this.$('local-start').addEventListener('click', () => this.startLocal());
@@ -164,16 +195,16 @@ export class Menus {
     this.$('local-start').disabled = duplicate;
     this.$('pad-status').textContent =
       `${pads} gamepad${pads === 1 ? '' : 's'} detected. ` +
-      (problems ? 'Plug in a controller and press any button on it to wake it up.' : 'Bots fill the remaining cars.');
+      (problems ? 'Plug in a controller and press any button on it to wake it up.' : '');
   }
 
   startLocal() {
     this.audio.unlock();
-    const slots = [];
+    const humans = [];
     for (let i = 0; i < CONFIG.TOTAL_CARS; i++) {
-      slots.push(i < this.localCount ? { kind: 'local', name: `P${i + 1}`, device: this.localDevices[i] } : { kind: 'bot' });
+      humans.push(i < this.localCount ? { kind: 'local', name: `P${i + 1}`, device: this.localDevices[i] } : null);
     }
-    this.game.startMatch({ mode: 'offline', slots });
+    this.game.startMatch({ mode: 'offline', slots: fillSlots(humans, this._bots('local')) });
     this._beginMatch();
   }
 
@@ -225,6 +256,7 @@ export class Menus {
     this._setStatus('online-status', 'Creating room…');
     const session = new OnlineSession(this.game, this._uiCallbacks());
     try {
+      session.botCount = this._bots('online');
       const code = await session.host(this._playerName() || 'Host');
       this.session = session;
       this.$('lobby-code').textContent = code;
@@ -267,17 +299,20 @@ export class Menus {
   _renderLobby(players, session) {
     const list = this.$('lobby-list');
     list.textContent = '';
+    let botsLeft = session ? (session.isHost ? session.effectiveBots : session.botCount) : 0;
     for (let i = 0; i < CONFIG.TOTAL_CARS; i++) {
       const p = players.find((pl) => pl.slot === i);
       const li = document.createElement('li');
-      if (!p) li.classList.add('bot');
+      const isBot = !p && botsLeft > 0;
+      if (isBot) botsLeft--;
+      if (!p) li.classList.add(isBot ? 'bot' : 'empty');
       if (p && session && p.slot === session.slot) li.classList.add('me');
       const sw = document.createElement('span');
       sw.className = 'swatch';
       sw.style.background = hex(CAR_DEFS[i].color);
       const name = document.createElement('span');
       name.className = 'pname';
-      name.textContent = p ? p.name : `${CAR_DEFS[i].botName} (bot)`;
+      name.textContent = p ? p.name : isBot ? `${CAR_DEFS[i].botName} (bot)` : 'Empty seat';
       li.append(sw, name);
       if (p && p.slot === 0) {
         const b = document.createElement('span');
@@ -291,6 +326,7 @@ export class Menus {
     const start = this.$('lobby-start');
     start.classList.toggle('hidden', !isHost);
     start.textContent = `Start Match (${players.length} player${players.length === 1 ? '' : 's'})`;
+    this._renderSteppers();
   }
 
   leaveOnline() {
@@ -303,6 +339,56 @@ export class Menus {
 
   _setStatus(id, text) {
     this.$(id).textContent = text || '';
+  }
+
+  // ----- Bot count steppers ---------------------------------------------------------
+
+  /** Allowed bot range for a mode given the humans currently in it. Matches need 2+ cars. */
+  _botRange(mode) {
+    let humans = 1;
+    if (mode === 'local') humans = this.localCount;
+    else if (mode === 'online') humans = this.session ? this.session.players.length : 1;
+    return { min: humans < 2 ? 1 : 0, max: CONFIG.TOTAL_CARS - humans };
+  }
+
+  _bots(mode) {
+    const { min, max } = this._botRange(mode);
+    return Math.min(max, Math.max(min, this.botCounts[mode]));
+  }
+
+  _bindSteppers() {
+    document.querySelectorAll('.stepper').forEach((el) => {
+      const mode = el.dataset.stepper;
+      el.querySelectorAll('.step-btn').forEach((btn) =>
+        btn.addEventListener('click', () => {
+          const next = this._bots(mode) + Number(btn.dataset.step);
+          const { min, max } = this._botRange(mode);
+          this.botCounts[mode] = Math.min(max, Math.max(min, next));
+          saveNumber(`cartag-bots-${mode}`, this.botCounts[mode]);
+          if (mode === 'online' && this.session && this.session.isHost) this.session.setBotCount(this.botCounts[mode]);
+          this._renderSteppers();
+        })
+      );
+    });
+  }
+
+  _renderSteppers() {
+    document.querySelectorAll('.stepper').forEach((el) => {
+      const mode = el.dataset.stepper;
+      const guest = mode === 'online' && this.session && !this.session.isHost;
+      const value = guest ? this.session.botCount : this._bots(mode);
+      const { min, max } = this._botRange(mode);
+      el.classList.toggle('readonly', !!guest);
+      el.querySelector('.step-val').textContent = String(value);
+      const [minus, plus] = el.querySelectorAll('.step-btn');
+      minus.disabled = value <= min;
+      plus.disabled = value >= max;
+    });
+    const soloHint = document.querySelector('[data-hint="solo"]');
+    if (soloHint) {
+      const n = this._bots('solo');
+      soloHint.textContent = `${n + 1} cars in the arena. Fewer bots means more room to escape.`;
+    }
   }
 
   // ----- Pause ----------------------------------------------------------------------

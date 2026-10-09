@@ -1019,3 +1019,72 @@ body.split #scoreboard {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------------------------------------------------------- Bot stepper */
+
+.bots-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 0 4px;
+  padding: 8px 8px 8px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.bots-label {
+  font-weight: 900;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.step-btn {
+  width: 44px;
+  height: 44px;
+  font: 900 24px var(--font);
+  line-height: 1;
+  color: #0b1020;
+  background: var(--cyan);
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.step-btn:disabled {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.1);
+  cursor: not-allowed;
+}
+
+.step-btn:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+.step-val {
+  min-width: 40px;
+  text-align: center;
+  font-size: 26px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.stepper.readonly .step-btn {
+  display: none;
+}
+
+.step-hint {
+  margin-top: 6px;
+}
+
+.player-rows li.empty {
+  opacity: 0.45;
+}

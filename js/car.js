@@ -303,6 +303,7 @@ export class Car {
     this.color = color;
     this.isPlayer = isPlayer; // driven by a human on this device
     this.isBot = false;
+    this.active = true; // false when this slot sits the match out
     this.slot = 0; // index in Game.cars (also the network id)
     this.netBuf = []; // online guests: recent host snapshots for interpolation
     this.speedScale = speedScale;
@@ -587,13 +588,13 @@ export class Car {
           circle.z += HIT.nz * HIT.pen;
           const vn = this.vel.x * HIT.nx + this.vel.z * HIT.nz;
           if (vn < 0) {
-            // Reflect with damping; tangential velocity is kept so cars scrape along walls.
-            const bounce = 0.35;
-            this.vel.x -= (1 + bounce) * vn * HIT.nx;
-            this.vel.z -= (1 + bounce) * vn * HIT.nz;
+            // Dead stop against walls / obstacles: the speed into the surface is absorbed
+            // (no bounce-back). Speed along the surface remains, scrubbed on hard hits.
+            this.vel.x -= vn * HIT.nx;
+            this.vel.z -= vn * HIT.nz;
             if (-vn > 4) {
-              this.vel.x *= 0.92;
-              this.vel.z *= 0.92;
+              this.vel.x *= 0.85;
+              this.vel.z *= 0.85;
             }
             this.lastImpact = Math.max(this.lastImpact, -vn);
           }
@@ -684,7 +685,7 @@ export class Car {
     this.root.position.copy(this.pos);
     this.root.rotation.set(-this.pitch, this.heading, this.roll, 'YXZ');
     // Flicker while ghosted so it is obvious why the car passes through others.
-    this.root.visible = this.ghostTimer <= 0 || Math.floor(this.ghostTimer * 16) % 2 === 0;
+    this.root.visible = this.active && (this.ghostTimer <= 0 || Math.floor(this.ghostTimer * 16) % 2 === 0);
 
     // Body lean in corners + squat/dive under acceleration (cosmetic only).
     if (dt > 0) {

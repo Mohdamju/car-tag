@@ -1,5 +1,5 @@
 import { CONFIG } from './config.js';
-import { GameState } from './game.js';
+import { GameState, fillSlots } from './game.js';
 
 // Online play over WebRTC data channels (PeerJS). One player hosts and runs the
 // authoritative simulation; guests send their controls and render the host's
@@ -61,6 +61,7 @@ export class OnlineSession {
     this.slot = -1;
     this.players = []; // host: [{slot, name, conn}]  guest: [{slot, name}]
     this.hostConn = null;
+    this.botCount = 4; // host's setting; guests mirror the host's effective value
     this.closed = false;
     this._snapAcc = 0;
     this._lastInput = '';
@@ -154,18 +155,31 @@ export class OnlineSession {
     this._emitLobby();
   }
 
+  /** Bots that will actually join: the host's setting, limited by free seats (min 2 cars). */
+  get effectiveBots() {
+    const free = CONFIG.TOTAL_CARS - this.players.length;
+    return Math.min(free, Math.max(this.botCount, 2 - this.players.length));
+  }
+
+  setBotCount(n) {
+    this.botCount = n;
+    this._emitLobby();
+  }
+
   /** Host: start (or restart) a match for everyone in the room. */
   startMatch() {
     if (!this.isHost) return;
-    const slots = [];
+    const humans = [];
     for (let i = 0; i < CONFIG.TOTAL_CARS; i++) {
       const p = this.players.find((pl) => pl.slot === i);
-      if (!p) slots.push({ kind: 'bot' });
-      else if (i === 0) slots.push({ kind: 'local', name: p.name, device: 'kb-all' });
-      else slots.push({ kind: 'remote', name: p.name });
+      if (!p) humans.push(null);
+      else if (i === 0) humans.push({ kind: 'local', name: p.name, device: 'kb-all' });
+      else humans.push({ kind: 'remote', name: p.name });
     }
-    const names = slots.map((s) => (s.kind === 'bot' ? null : s.name));
-    this._broadcast({ t: 'start', names });
+    const slots = fillSlots(humans, this.effectiveBots);
+    const names = slots.map((s) => (s.kind === 'local' || s.kind === 'remote' ? s.name : null));
+    const kinds = slots.map((s) => (s.kind === 'bot' ? 'b' : s.kind === 'empty' ? 'e' : 'h'));
+    this._broadcast({ t: 'start', names, kinds });
     this.game.session = this;
     this.game.startMatch({ mode: 'host', slots });
     this._snapAcc = 1; // send the first snapshot immediately
@@ -186,7 +200,7 @@ export class OnlineSession {
 
   _emitLobby() {
     const list = this.players.map((p) => ({ slot: p.slot, name: p.name }));
-    if (this.isHost) this._broadcast({ t: 'lobby', players: list });
+    if (this.isHost) this._broadcast({ t: 'lobby', players: list, bots: this.effectiveBots });
     this.ui.onLobby(list, this);
   }
 
@@ -255,15 +269,18 @@ export class OnlineSession {
     switch (msg.t) {
       case 'lobby':
         this.players = Array.isArray(msg.players) ? msg.players : [];
+        if (Number.isInteger(msg.bots)) this.botCount = msg.bots;
         this.ui.onLobby(this.players, this);
         break;
       case 'start': {
         const slots = [];
         for (let i = 0; i < CONFIG.TOTAL_CARS; i++) {
           const name = msg.names && msg.names[i];
+          const kind = msg.kinds && msg.kinds[i];
           if (i === this.slot) slots.push({ kind: 'local', name: this.name, device: 'kb-all' });
-          else if (name) slots.push({ kind: 'remote', name: cleanName(name, `Player ${i + 1}`) });
-          else slots.push({ kind: 'bot' });
+          else if (kind === 'e') slots.push({ kind: 'empty' });
+          else if (kind === 'b' || !name) slots.push({ kind: 'bot' });
+          else slots.push({ kind: 'remote', name: cleanName(name, `Player ${i + 1}`) });
         }
         this.game.session = this;
         this.game.startMatch({ mode: 'client', slots });

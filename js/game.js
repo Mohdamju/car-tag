@@ -19,6 +19,25 @@ export const CAR_DEFS = [
   { typeKey: 'muscle', color: 0xff9a1f, botName: 'Drifty', speedScale: 0.96, aggression: 1.0 },
 ];
 
+/**
+ * Build the per-slot setup: humans keep their slots, bots fill the lowest free
+ * slots up to `botCount`, the rest sit out. Always at least 2 cars.
+ * @param {Array<object|null>} humans one entry per slot, null where no human sits
+ */
+export function fillSlots(humans, botCount) {
+  const slots = [];
+  const humanCount = humans.filter(Boolean).length;
+  let bots = Math.max(botCount, 2 - humanCount);
+  for (let i = 0; i < CONFIG.TOTAL_CARS; i++) {
+    if (humans[i]) slots.push(humans[i]);
+    else if (bots > 0) {
+      slots.push({ kind: 'bot' });
+      bots--;
+    } else slots.push({ kind: 'empty' });
+  }
+  return slots;
+}
+
 export const GameState = {
   MENU: 'menu',
   COUNTDOWN: 'countdown',
@@ -72,7 +91,8 @@ export class Game {
     this.mode = 'offline';
     this.state = GameState.MENU;
     this.paused = false;
-    this.cars = [];
+    this.allCars = []; // all six slots, index === slot
+    this.cars = []; // cars taking part in the current match (slot order)
     this.bots = [];
     this.labels = [];
     this.arrows = [];
@@ -97,6 +117,7 @@ export class Game {
     this.overview.rig.mode = 'orbit';
 
     this._createCars();
+    this._setActiveCars(this.allCars);
     this._placeOnSpawns();
     this._setHolder(this.cars[Math.floor(Math.random() * this.cars.length)], true);
   }
@@ -108,7 +129,7 @@ export class Game {
       const car = new Car({ id: `car${i}`, name: def.botName, typeKey: def.typeKey, color: def.color, speedScale: def.speedScale });
       car.slot = i;
       car.isBot = true;
-      this.cars.push(car);
+      this.allCars.push(car);
       this.bots.push(new Bot(car, this.arena, { aggression: def.aggression, wobble: 0.04 + Math.random() * 0.05 }));
       this.remoteControls.push({ throttle: 0, brake: 0, steer: 0, boost: false, drift: false });
       this.scene.add(car.root);
@@ -121,12 +142,27 @@ export class Game {
 
   _setLabel(i, text) {
     const old = this.labels[i];
-    const label = makeLabel(text, this.cars[i].color);
+    const label = makeLabel(text, this.allCars[i].color);
     this.scene.remove(old);
     old.material.map.dispose();
     old.material.dispose();
     this.scene.add(label);
     this.labels[i] = label;
+  }
+
+  /** Choose which slots take part; the rest are hidden and skipped by every system. */
+  _setActiveCars(list) {
+    this.cars = list;
+    this._ctx.cars = list;
+    this.allCars.forEach((car, i) => {
+      car.active = list.includes(car);
+      car.root.visible = car.active;
+      this.labels[i].visible = car.active;
+      if (!car.active) {
+        this.arrows[i].update(0, car, null, false);
+        car.hasCrown = false;
+      }
+    });
   }
 
   _makeView(car, rect) {
@@ -143,8 +179,8 @@ export class Game {
   // ----- Match setup --------------------------------------------------------
 
   /**
-   * @param {{mode: 'offline'|'host'|'client', slots: Array<{kind: 'local'|'bot'|'remote', name?: string, device?: string}>}} setup
-   * One entry per car slot (CONFIG.TOTAL_CARS).
+   * @param {{mode: 'offline'|'host'|'client', slots: Array<{kind: 'local'|'bot'|'remote'|'empty', name?: string, device?: string}>}} setup
+   * One entry per car slot (CONFIG.TOTAL_CARS). 'empty' slots sit the match out.
    */
   startMatch(setup) {
     this._lastSetup = setup;
@@ -154,8 +190,11 @@ export class Game {
 
     // Configure every car for its controller.
     const localSlots = [];
-    this.cars.forEach((car, i) => {
-      const slot = this.slots[i] || { kind: 'bot' };
+    const active = [];
+    this.allCars.forEach((car, i) => {
+      const slot = this.slots[i] || { kind: 'empty' };
+      if (slot.kind === 'empty') return;
+      active.push(car);
       car.isBot = slot.kind === 'bot';
       car.isPlayer = slot.kind === 'local';
       car.name = car.isBot ? CAR_DEFS[i].botName : slot.name;
@@ -166,12 +205,13 @@ export class Game {
       rc.boost = rc.drift = false;
       if (slot.kind === 'local') localSlots.push(i);
     });
+    this._setActiveCars(active);
 
     // Split-screen views.
     const n = localSlots.length;
     const layout = LAYOUTS[n >= 3 ? 4 : n] || LAYOUTS[1];
     this.views = localSlots.map((slotIndex, k) => {
-      const car = this.cars[slotIndex];
+      const car = this.allCars[slotIndex];
       const view = this._makeView(car, layout[k]);
       view.rig.mode = 'follow';
       view.device = this.slots[slotIndex].device || 'kb-all';
@@ -264,7 +304,8 @@ export class Game {
     this.arena.setShadowSpan(55);
     this.audio.setEngine(0, 0, false, false);
     this.platform.gameplayStop();
-    this.cars.forEach((car, i) => {
+    this._setActiveCars(this.allCars);
+    this.allCars.forEach((car, i) => {
       car.isPlayer = false;
       car.clearControls();
       car.netBuf.length = 0;
@@ -379,13 +420,13 @@ export class Game {
   /** Fill every car's controls from its controller (local device, bot brain, or network). */
   _gatherControls(dt) {
     for (const v of this.views) this.input.read(v.device, v.car.controls);
-    this.cars.forEach((car, i) => {
-      const kind = this.slots[i] ? this.slots[i].kind : 'bot';
-      if (kind === 'remote') Object.assign(car.controls, this.remoteControls[i]);
-    });
-    this.bots.forEach((bot) => {
-      if (bot.car.isBot) bot.think(dt, this._ctx);
-    });
+    for (const car of this.cars) {
+      const kind = this.slots[car.slot] ? this.slots[car.slot].kind : 'bot';
+      if (kind === 'remote') Object.assign(car.controls, this.remoteControls[car.slot]);
+    }
+    for (const bot of this.bots) {
+      if (bot.car.isBot && bot.car.active) bot.think(dt, this._ctx);
+    }
   }
 
   /** Sub-stepped physics + collisions + tag rules (offline / host). */
@@ -564,7 +605,7 @@ export class Game {
   convertToBot(slot) {
     if (!this.slots[slot]) return;
     this.slots[slot] = { kind: 'bot' };
-    const car = this.cars[slot];
+    const car = this.allCars[slot];
     car.isBot = true;
     car.name = CAR_DEFS[slot].botName;
     this._setLabel(slot, car.name);
@@ -581,10 +622,10 @@ export class Game {
     if (this.state === GameState.COUNTDOWN) this.countdown = s.cd;
     this.matchTime = s.mt;
     this.tagLock = s.tl;
-    const holder = this.cars[s.h];
+    const holder = this.allCars[s.h];
     if (holder && holder !== this.holder) this._setHolder(holder, this.net.awaitingFirst);
 
-    const own = this.cars[this.net.localSlot];
+    const own = this.allCars[this.net.localSlot];
     s.c.forEach((a, i) => {
       const car = this.cars[i];
       if (!car || !Array.isArray(a)) return;
@@ -596,7 +637,7 @@ export class Game {
       if (car.netBuf.length > 6) car.netBuf.shift();
     });
 
-    if (own) this._reconcileOwn(own, s.c[this.net.localSlot]);
+    if (own) this._reconcileOwn(own, s.c[this.cars.indexOf(own)]);
 
     if (this.net.awaitingFirst) {
       this.net.awaitingFirst = false;
@@ -650,8 +691,8 @@ export class Game {
   applyEvent(ev) {
     if (this.mode !== 'client' || !ev) return;
     if (ev.e === 'tag') {
-      const from = this.cars[ev.f];
-      const to = this.cars[ev.t];
+      const from = this.allCars[ev.f];
+      const to = this.allCars[ev.t];
       if (!from || !to) return;
       this._setHolder(to);
       this._presentTag(from, to, ev.x, ev.z);
@@ -666,7 +707,7 @@ export class Game {
   }
 
   _updateClient(dt) {
-    const own = this.cars[this.net.localSlot];
+    const own = this.allCars[this.net.localSlot];
 
     if (this.state === GameState.COUNTDOWN) {
       this.countdown = Math.max(0, this.countdown - dt);
@@ -779,7 +820,8 @@ export class Game {
 
   _syncVisuals(dt) {
     const showArrows = this.isRunning;
-    this.cars.forEach((car, i) => {
+    this.cars.forEach((car) => {
+      const i = car.slot;
       if (this.mode === 'client' && car.slot !== this.net.localSlot && dt > 0) {
         // Guests do not run physics for other cars; keep the ghost flicker timing alive.
         car.ghostTimer = Math.max(0, car.ghostTimer - dt);
@@ -813,9 +855,7 @@ export class Game {
 
   /** Per-view tweaks right before rendering (hide your own name tag, size particles). */
   prepareView(view, heightPx) {
-    this.cars.forEach((car, i) => {
-      this.labels[i].visible = car !== view.car;
-    });
+    for (const car of this.cars) this.labels[car.slot].visible = car !== view.car;
     this.particles.setView(heightPx, view.camera.fov);
   }
 }

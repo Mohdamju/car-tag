@@ -4,9 +4,9 @@ A low-poly 3D arcade car-tag game built with plain JavaScript and Three.js. It n
 
 Grab the crown and hold it longer than anyone else before the 90-second timer runs out. The crown holder is 15% slower and their nitro doesn't refill, so the chasers can catch up.
 
-Modes (every match has 6 cars; bots fill the empty seats):
+Modes (up to 6 cars per match; every mode has a Bots setting):
 
-- **Solo**: you against 5 bots.
+- **Solo**: you against 1–5 bots.
 - **Local**: 2–4 players in split screen. Up to 2 players share the keyboard; players 3–4 use gamepads.
 - **Online**: 2–6 players. One player creates a room and the others join with its 4-letter code.
 
