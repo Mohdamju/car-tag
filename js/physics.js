@@ -7,6 +7,7 @@
 
 const MAX_LEVEL_DIFF = 2.4;
 const RESTITUTION = 0.55;
+const CAR_CONTACT_MEMORY = 0.3; // seconds a car remembers touching another (anti-pin check)
 
 const _ca = { x: 0, z: 0 };
 const _cb = { x: 0, z: 0 };
@@ -58,7 +59,10 @@ export function contact(a, b, extra = 0) {
  * Returns the closing speed along the contact normal (0 if they were separating).
  */
 export function resolvePair(a, b) {
+  if (a.ghostTimer > 0 || b.ghostTimer > 0) return 0; // anti-pin: ghosted cars pass through
   if (!contact(a, b, 0)) return 0;
+  a.carContactTimer = CAR_CONTACT_MEMORY;
+  b.carContactTimer = CAR_CONTACT_MEMORY;
   const nx = CONTACT.nx;
   const nz = CONTACT.nz;
   const ma = a.spec.mass;

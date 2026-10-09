@@ -286,6 +286,10 @@ function buildMonster(color) {
   return { chassis, wheels, flames };
 }
 
+const PIN_SPEED = 1.5; // m/s of real movement below which a driving car counts as pinned
+const PIN_TIME = 0.4;
+const GHOST_TIME = 0.8;
+
 // ---------------------------------------------------------------------------
 // Car (kinematic arcade physics, no physics engine)
 // ---------------------------------------------------------------------------
@@ -342,6 +346,15 @@ export class Car {
     this._chassisRoll = 0;
     this._prevForward = 0;
     this._flamePhase = Math.random() * 10;
+
+    // Anti-pin: if the driver is giving gas/brake but the car has barely moved for
+    // PIN_TIME, it turns "ghost" for GHOST_TIME and ignores other cars (not walls)
+    // so it can drive out of a pile-up.
+    this.pinnedTime = 0;
+    this.ghostTimer = 0;
+    this.carContactTimer = 0; // set by physics.resolvePair while touching another car
+    this._prevX = 0;
+    this._prevZ = 0;
   }
 
   get speed() {
@@ -374,6 +387,9 @@ export class Car {
     this.holdTime = 0;
     this.lastImpact = 0;
     this.lastLanding = 0;
+    this.pinnedTime = 0;
+    this.ghostTimer = 0;
+    this.carContactTimer = 0;
     this._chassisPitch = 0;
     this._chassisRoll = 0;
     this._prevForward = 0;
@@ -403,6 +419,9 @@ export class Car {
   update(dt, arena) {
     this.lastImpact = 0;
     this.lastLanding = 0;
+    this._trackPinned(dt);
+    this._prevX = this.pos.x;
+    this._prevZ = this.pos.z;
     this._updateNitro(dt);
     this._updateHorizontal(dt);
 
@@ -419,6 +438,29 @@ export class Car {
       this.pos.set(0, 0, 0);
       this.vel.set(0, 0, 0);
       this.grounded = true;
+    }
+  }
+
+  /** Measures real displacement since the last step (after car-car pushes were applied). */
+  _trackPinned(dt) {
+    if (this.ghostTimer > 0) {
+      this.ghostTimer = Math.max(0, this.ghostTimer - dt);
+      this.pinnedTime = 0;
+      return;
+    }
+    this.carContactTimer = Math.max(0, this.carContactTimer - dt);
+    const c = this.controls;
+    // Only a pile-up with another car counts; a lone car pushing a wall is not pinned.
+    const driving = (c.throttle > 0 || c.brake > 0) && this.carContactTimer > 0;
+    const moved = Math.hypot(this.pos.x - this._prevX, this.pos.z - this._prevZ) / Math.max(dt, 1e-4);
+    if (driving && this.grounded && moved < PIN_SPEED) {
+      this.pinnedTime += dt;
+      if (this.pinnedTime > PIN_TIME) {
+        this.ghostTimer = GHOST_TIME;
+        this.pinnedTime = 0;
+      }
+    } else {
+      this.pinnedTime = Math.max(0, this.pinnedTime - dt * 2);
     }
   }
 
@@ -638,6 +680,8 @@ export class Car {
   syncMesh(dt) {
     this.root.position.copy(this.pos);
     this.root.rotation.set(-this.pitch, this.heading, this.roll, 'YXZ');
+    // Flicker while ghosted so it is obvious why the car passes through others.
+    this.root.visible = this.ghostTimer <= 0 || Math.floor(this.ghostTimer * 16) % 2 === 0;
 
     // Body lean in corners + squat/dive under acceleration (cosmetic only).
     if (dt > 0) {
