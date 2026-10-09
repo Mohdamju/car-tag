@@ -17,7 +17,7 @@ export const CAR_TYPES = {
     rollFriction: 7,
     drag: 0.07,
     turnRate: 2.6,
-    grip: 13,
+    grip: 15,
     gripDrift: 3.4,
     mass: 1,
     radius: 1.0,
@@ -40,7 +40,7 @@ export const CAR_TYPES = {
     rollFriction: 6,
     drag: 0.07,
     turnRate: 2.2,
-    grip: 10,
+    grip: 12,
     gripDrift: 3.0,
     mass: 1.5,
     radius: 1.25,
@@ -453,7 +453,9 @@ export class Car {
     const topSpeed = maxSpeed * boostMul;
 
     // Steering input is smoothed so keyboard play feels analogue.
-    const rate = Math.abs(c.steer) > Math.abs(this.steerCur) ? 8 : 12;
+    // Quicker return-to-centre (and counter-steer) than turn-in keeps it twitch-free but responsive.
+    const counter = c.steer !== 0 && Math.sign(c.steer) !== Math.sign(this.steerCur);
+    const rate = counter ? 16 : Math.abs(c.steer) > Math.abs(this.steerCur) ? 10 : 14;
     this.steerCur += clamp(c.steer - this.steerCur, -rate * dt, rate * dt);
 
     if (!this.grounded) {
@@ -470,7 +472,7 @@ export class Car {
     const speedAbs = Math.abs(this.forwardSpeed);
     const drifting = c.drift && speedAbs > 9;
     this.drifting = drifting;
-    const authority = clamp(speedAbs / 6, 0, 1) * (1 - 0.45 * clamp(speedAbs / maxSpeed, 0, 1));
+    const authority = clamp(speedAbs / 4, 0, 1) * (1 - 0.38 * clamp(speedAbs / maxSpeed, 0, 1));
     const turn = this.steerCur * spec.turnRate * authority * (drifting ? 1.3 : 1);
     const dirSign = this.forwardSpeed >= -0.5 ? 1 : -1;
     this.heading -= turn * dt * dirSign; // steer > 0 = right = heading decreases
@@ -484,11 +486,14 @@ export class Car {
     let vs = this.vel.x * sx + this.vel.z * sz;
 
     // --- Throttle / brake / reverse / friction ---
-    let throttle = c.throttle;
-    if (this.boosting) throttle = Math.max(throttle, 1);
     const brake = c.brake;
+    let throttle = c.throttle;
+    if (this.boosting && brake <= 0) throttle = Math.max(throttle, 1);
 
-    if (throttle > 0 && vf < topSpeed) {
+    if (throttle > 0 && vf < -0.5) {
+      // Rolling backwards and pressing gas: brake hard first, then pull away.
+      vf = Math.min(0, vf + spec.brake * throttle * dt);
+    } else if (throttle > 0 && vf < topSpeed) {
       const ratio = clamp(vf / topSpeed, 0, 1);
       vf += spec.accel * boostMul * (1 - 0.5 * ratio) * throttle * dt;
       if (vf > topSpeed) vf = topSpeed;
